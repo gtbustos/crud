@@ -1,0 +1,155 @@
+{%  block head %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/css/ol.css" type="text/css">
+    <style>
+        .btn {
+            margin-bottom: 10px;
+        }
+        .container {
+            margin: 0 auto;
+            width: 60%;
+        }
+        .map {
+            height: 600px;
+            width: 100%;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    <div class="container">
+        <div id="top">
+        <button class="btn" onclick="novoAlvo()">Adicionar ponto</button>
+        </div>
+        <div id="map" class="map">
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="//cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <script src="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.5.0/build/ol.js"></script>
+    <script type="text/javascript">
+        var map = new ol.Map({
+            target: 'map',
+            layers: [
+                new ol.layer.Tile({
+                    source: new ol.source.OSM()
+                })
+            ],
+            view: new ol.View({
+                center: ol.proj.fromLonLat([-49, -19]),
+                zoom: 4
+            })
+        });
+
+        function novoAlvo() {
+            Swal.fire({
+                title: 'Novo Alvo',
+                html: `
+                    <input type="text" id="nome" class="swal2-input" placeholder="Nome">
+                    <input type="text" id="lat" class="swal2-input" placeholder="37.41">
+                    <input type="text" id="lon" class="swal2-input" placeholder="8.82">
+                    <input type="date" id="data" class="swal2-input">
+                `,
+                confirmButtonText: 'Salvar',
+                focusConfirm: false,
+                showCancelButton: true,
+                cancelButtonText: 'Cancelar',
+                preConfirm: () => {
+                    const nome = Swal.getPopup().querySelector('#nome').value
+                    const lat = Swal.getPopup().querySelector('#lat').value
+                    const lon = Swal.getPopup().querySelector('#lon').value
+                    const data = Swal.getPopup().querySelector('#data').value
+                    if (!(nome && lat && lon && data)) {
+                        Swal.showValidationMessage(`Por favor preencha todos os campos`)
+                    }
+                    postData('/create', {nome: nome, latitude: lat, longitude: lon, validade: data})
+                }
+            })
+        }
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    // Does this cookie string begin with the name we want?
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        const csrftoken = getCookie('csrftoken');
+
+        function createMarker(data) {
+            var pos = ol.proj.fromLonLat([data.longitude, data.latitude])
+            var elem = document.createElement('div')
+            elem.setAttribute('id', data.id)
+            elem.setAttribute('class', 'points')
+            elem.innerHTML = '<img src="https://cdn.mapmarker.io/api/v1/fa/stack?size=50&color=DC4C3F&icon=fa-microchip&hoffset=1" />';
+            let m = new ol.Overlay({
+                positioning: 'center-center',
+                element: elem,
+                stopEvent: false
+            })
+            map.addOverlay(m)
+            m.setPosition(pos);
+        }
+
+        (function addAlvos() {
+            var alvos = {{ alvos|safe }}
+            for(let i=0;i<alvos.length;i++) {
+                let data = {
+                    nome: alvos[i].fields.nome,
+                    latitude: alvos[i].fields.latitude,
+                    longitude: alvos[i].fields.longitude,
+                    id: alvos[i].pk,
+                }
+                createMarker(data)
+            }
+        })();
+        function deleteMarker(data) {
+            var elem = document.getElementById(data.id)
+            elem.parentNode.removeChild(elem)
+        }
+        function postData(endpoint, data) {
+            axios.post(endpoint, data, {
+                headers: { 'X-CSRFToken': csrftoken }
+            }).then(function (response) {
+                if(endpoint == '/create')
+                    createMarker(response.data)
+                if(endpoint == '/delete')
+                    deleteMarker(response.data)
+            })
+        }
+        document.addEventListener('click', function(event) {
+            if(!event.target.parentElement.matches('.points')) return;
+            event.preventDefault();
+            var url = '/get/' + event.target.parentElement.id
+            axios.get(url)
+            .then(function (response) {
+                var validade = new Date(response.data.validade).toLocaleDateString()
+                Swal.fire({
+                    title: response.data.nome,
+                    html: `
+                        <span>Latitude: ` + response.data.latitude + `</span>
+                        <br>
+                        <span>Longitude: ` + response.data.longitude + `</span>
+                        <br>
+                        <span>Validade: ` + validade + `</span>
+                    `,
+                    confirmButtonText: 'Deletar',
+                    focusConfirm: false,
+                    showCancelButton: true,
+                    cancelButtonText: 'Cancelar',
+                }).then(function(result) {
+                    if (result.isConfirmed) {
+                        postData('/delete', {id: response.data.id})
+                    }
+                })
+            })
+        }, false);
+    </script>
+
+{% endblock %}
